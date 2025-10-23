@@ -9,23 +9,28 @@ const Dashboard = () => {
   const [tasks, setTasks] = useState([]);
   const [pagination, setPagination] = useState({});
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
-  const [sort, setSort] = useState("createdAt:desc");
   const [showModal, setShowModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedTasks, setSelectedTasks] = useState([]);
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "",
+    priority: "",
+    sort: "createdAt:desc",
+  });
 
   const getTasks = useCallback(async () => {
     try {
+      const { search, status, priority, sort } = filters;
       const res = await api.get(
-        `/tasks?page=${page}&limit=5&status=${status}&search=${search}&sort=${sort}`
+        `/tasks?page=${page}&limit=5&status=${status}&search=${search}&sort=${sort}&priority=${priority}`
       );
       setTasks(res.data.data);
       setPagination(res.data.pagination);
     } catch (err) {
       if (err.response?.status === 401) logout();
     }
-  }, [page, status, sort, search, logout]);
+  }, [page, logout, filters]);
 
   useEffect(() => {
     getTasks();
@@ -61,6 +66,70 @@ const Dashboard = () => {
     getTasks();
   };
 
+  const handleToggleComplete = async (task) => {
+    try {
+      const updatedStatus =
+        task.status === "completed" ? "pending" : "completed";
+      const res = await api.put(`/tasks/${task._id}`, {
+        status: updatedStatus,
+      });
+
+      // Update tasks state
+      setTasks((prev) => prev.map((t) => (t._id === task._id ? res.data : t)));
+
+      toast.success(
+        updatedStatus === "completed"
+          ? "Task marked as completed!"
+          : "Task marked as pending!"
+      );
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to update task");
+    }
+  };
+
+  const handleBulkComplete = async () => {
+    try {
+      const promises = selectedTasks.map((id) =>
+        api.put(`/tasks/${id}`, { status: "completed" })
+      );
+      const results = await Promise.all(promises);
+
+      // Update state
+      setTasks((prev) =>
+        prev.map((task) =>
+          selectedTasks.includes(task._id)
+            ? results.find((r) => r.data._id === task._id).data
+            : task
+        )
+      );
+
+      toast.success("Selected tasks marked as completed!");
+      setSelectedTasks([]); // Clear selection
+    } catch (err) {
+      toast.error("Failed to update selected tasks");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete selected tasks?"))
+      return;
+
+    try {
+      const promises = selectedTasks.map((id) => api.delete(`/tasks/${id}`));
+      await Promise.all(promises);
+
+      // Update state
+      setTasks((prev) =>
+        prev.filter((task) => !selectedTasks.includes(task._id))
+      );
+
+      toast.success("Selected tasks deleted!");
+      setSelectedTasks([]); // Clear selection
+    } catch (err) {
+      toast.error("Failed to delete selected tasks");
+    }
+  };
+
   const handleOpenModal = (task = null) => {
     setSelectedTask(task);
     setShowModal(true);
@@ -71,11 +140,32 @@ const Dashboard = () => {
     setShowModal(false);
   };
 
+  const handleFilterChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPage(1);
+  };
+
   return (
     <div className="p-6 min-h-screen bg-gray-50">
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-xl font-semibold">Task Manager</h1>
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={handleBulkComplete}
+            disabled={selectedTasks.length === 0}
+            className="bg-green-500 text-white px-3 py-1 rounded disabled:opacity-50"
+          >
+            Mark Completed
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            disabled={selectedTasks.length === 0}
+            className="bg-red-500 text-white px-3 py-1 rounded disabled:opacity-50"
+          >
+            Delete Selected
+          </button>
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => handleOpenModal()}
@@ -97,14 +187,14 @@ const Dashboard = () => {
         <input
           type="text"
           placeholder="Search tasks..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={filters.search}
+          onChange={(e) => handleFilterChange("search", e.target.value)}
           className="border p-2 rounded flex-1"
         />
 
         <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          value={filters.status}
+          onChange={(e) => handleFilterChange("status", e.target.value)}
           className="border p-2 rounded"
         >
           <option value="">All</option>
@@ -112,10 +202,20 @@ const Dashboard = () => {
           <option value="in-progress">In Progress</option>
           <option value="completed">Completed</option>
         </select>
+        <select
+          value={filters.priority}
+          onChange={(e) => handleFilterChange("priority", e.target.value)}
+          className="border p-2 rounded"
+        >
+          <option value="">All Priorities</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
 
         <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value)}
+          value={filters.sort}
+          onChange={(e) => handleFilterChange("sort", e.target.value)}
           className="border p-2 rounded"
         >
           <option value="createdAt:desc">Newest</option>
@@ -144,12 +244,38 @@ const Dashboard = () => {
               className="border p-3 rounded bg-white shadow-sm flex justify-between items-center"
             >
               <div>
-                <h3 className="font-bold text-gray-800">{task.title}</h3>
-                <p className="text-sm text-gray-600">{task.description}</p>
-                <p className="text-xs text-gray-500">
-                  Status: {task.status} |{" "}
-                  {task.dueDate && `Due: ${task.dueDate.split("T")[0]}`}
-                </p>
+                <div>
+                  <input
+                    type="checkbox"
+                    checked={selectedTasks.includes(task._id)}
+                    onChange={() => {
+                      setSelectedTasks((prev) =>
+                        prev.includes(task._id)
+                          ? prev.filter((id) => id !== task._id)
+                          : [...prev, task._id]
+                      );
+                    }}
+                    className="w-4 h-4"
+                  />
+                </div>
+                <div>
+                  <h3
+                    className="font-bold text-gray-800 cursor-pointer"
+                    onClick={() => handleToggleComplete(task)}
+                    title={
+                      task.status === "pending"
+                        ? " Mark as complete"
+                        : " Mark as Pending"
+                    }
+                  >
+                    {task.title}
+                  </h3>
+                  <p className="text-sm text-gray-600">{task.description}</p>
+                  <p className="text-xs text-gray-500">
+                    Status: {task.status} | Priority: {task.priority} |
+                    {task.dueDate && ` Due: ${task.dueDate.split("T")[0]}`}
+                  </p>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button

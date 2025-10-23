@@ -5,6 +5,7 @@ const TaskModal = ({ show, onClose, onSave, task }) => {
     title: "",
     description: "",
     status: "pending",
+    priority: "",
     dueDate: "",
   });
 
@@ -13,14 +14,16 @@ const TaskModal = ({ show, onClose, onSave, task }) => {
       setForm({
         title: task.title || "",
         description: task.description || "",
-        status: task.status || "pending",
+        status: task.status || "",
         dueDate: task.dueDate ? task.dueDate.split("T")[0] : "",
+        priority: task.priority || "",
       });
     } else {
       setForm({
         title: "",
         description: "",
         status: "pending",
+        priority: "",
         dueDate: "",
       });
     }
@@ -69,6 +72,16 @@ const TaskModal = ({ show, onClose, onSave, task }) => {
             <option value="pending">Pending</option>
             <option value="in-progress">In Progress</option>
             <option value="completed">Completed</option>
+          </select>
+          <select
+            name="priority"
+            value={form.priority}
+            onChange={handleChange}
+            className="border p-2 w-full mb-3 rounded"
+          >
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
           </select>
           <input
             type="date"
